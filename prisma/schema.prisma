@@ -1,0 +1,107 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ユーザー（生徒・保護者）
+model User {
+  id          String    @id @default(cuid())
+  lineUserId  String    @unique @map("line_user_id")
+  displayName String    @map("display_name")
+  pictureUrl  String?   @map("picture_url")
+  email       String?
+  phone       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  bookings Booking[]
+
+  @@map("users")
+}
+
+// 講師
+model Teacher {
+  id          String   @id @default(cuid())
+  name        String
+  pictureUrl  String?  @map("picture_url")
+  bio         String?  // 自己紹介
+  specialties String[] // 得意科目
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  timeSlots TimeSlot[]
+  bookings  Booking[]
+
+  @@map("teachers")
+}
+
+// 科目
+model Subject {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  duration    Int      @default(60) // 分
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  bookings Booking[]
+
+  @@map("subjects")
+}
+
+// 予約枠（固定枠）
+model TimeSlot {
+  id        String   @id @default(cuid())
+  teacherId String   @map("teacher_id")
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  date      DateTime
+  startTime String   @map("start_time") // "10:00"
+  endTime   String   @map("end_time")   // "11:00"
+  capacity  Int      @default(1)
+  booked    Int      @default(0)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bookings Booking[]
+
+  @@unique([teacherId, date, startTime])
+  @@index([date])
+  @@index([teacherId])
+  @@map("time_slots")
+}
+
+// 予約
+model Booking {
+  id         String        @id @default(cuid())
+  userId     String        @map("user_id")
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherId  String        @map("teacher_id")
+  teacher    Teacher       @relation(fields: [teacherId], references: [id])
+  subjectId  String        @map("subject_id")
+  subject    Subject       @relation(fields: [subjectId], references: [id])
+  timeSlotId String        @map("time_slot_id")
+  timeSlot   TimeSlot      @relation(fields: [timeSlotId], references: [id])
+  status     BookingStatus @default(CONFIRMED)
+  notes      String?       // 備考・要望
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([teacherId])
+  @@index([status])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  CONFIRMED  // 確定
+  CANCELLED  // キャンセル
+  COMPLETED  // 完了
+  NO_SHOW    // 無断欠席
+}
