@@ -1,9 +1,83 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
+import { google } from 'googleapis';
 
 const prisma = new PrismaClient();
 
+// ====== Google Calendar設定 ======
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'ifjuku@gmail.com';
+
+function getCalendarClient() {
+  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!credentials) return null;
+
+  try {
+    const key = JSON.parse(credentials);
+    const auth = new google.auth.JWT(
+      key.client_email,
+      undefined,
+      key.private_key,
+      ['https://www.googleapis.com/auth/calendar']
+    );
+    return google.calendar({ version: 'v3', auth });
+  } catch {
+    return null;
+  }
+}
+
+async function addCalendarEvent(
+  summary: string,
+  date: string,
+  startTime: string,
+  endTime: string
+): Promise<string | null> {
+  const calendar = getCalendarClient();
+  if (!calendar) return null;
+
+  try {
+    const response = await calendar.events.insert({
+      calendarId: GOOGLE_CALENDAR_ID,
+      requestBody: {
+        summary,
+        start: { dateTime: `${date}T${startTime}:00`, timeZone: 'Asia/Tokyo' },
+        end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
+      },
+    });
+    return response.data.id || null;
+  } catch (error) {
+    console.error('Calendar event creation failed:', error);
+    return null;
+  }
+}
+
+// ====== LINE通知設定 ======
+async function sendLineNotification(
+  userName: string,
+  dateStr: string,
+  time: string,
+  action: 'created' | 'cancelled'
+): Promise<void> {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const adminUserId = process.env.LINE_ADMIN_USER_ID;
+
+  if (!token || !adminUserId) return;
+
+  const actionText = action === 'created' ? '🆕 新規予約' : '❌ キャンセル';
+  const message = `${actionText}\n\n👤 ${userName}\n📅 ${dateStr}\n🕐 ${time}\n\n体験授業の予約${action === 'created' ? 'が入りました' : 'がキャンセルされました'}。`;
+
+  try {
+    await axios.post(
+      'https://api.line.me/v2/bot/message/push',
+      { to: adminUserId, messages: [{ type: 'text', text: message }] },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch (error) {
+    console.error('LINE notification failed:', error);
+  }
+}
+
+// ====== LIFF認証 ======
 interface LiffProfile {
   userId: string;
   displayName: string;
@@ -12,9 +86,8 @@ interface LiffProfile {
 
 async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+
   const accessToken = authHeader.substring(7);
 
   if (accessToken === 'mock-access-token-for-development') {
@@ -31,6 +104,17 @@ async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> 
   }
 }
 
+// ====== 日付フォーマット ======
+function formatDate(date: Date): string {
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const day = days[date.getDay()];
+  return `${y}年${m}月${d}日(${day})`;
+}
+
+// ====== メインハンドラー ======
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -46,7 +130,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // ユーザーを取得または作成
     let user = await prisma.user.findUnique({
       where: { lineUserId: profile.userId },
     });
@@ -65,24 +148,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const bookings = await prisma.booking.findMany({
         where: { userId: user.id },
         include: {
-          timeSlot: {
-            select: { date: true, startTime: true, endTime: true },
-          },
+          timeSlot: { select: { date: true, startTime: true, endTime: true } },
         },
         orderBy: { createdAt: 'desc' },
       });
 
-      const response = bookings.map((b) => ({
-        id: b.id,
-        date: b.timeSlot.date.toISOString().split('T')[0],
-        startTime: b.timeSlot.startTime,
-        endTime: b.timeSlot.endTime,
-        status: b.status,
-        notes: b.notes,
-        createdAt: b.createdAt.toISOString(),
-      }));
-
-      return res.status(200).json(response);
+      return res.status(200).json(
+        bookings.map((b) => ({
+          id: b.id,
+          date: b.timeSlot.date.toISOString().split('T')[0],
+          startTime: b.timeSlot.startTime,
+          endTime: b.timeSlot.endTime,
+          status: b.status,
+          notes: b.notes,
+          createdAt: b.createdAt.toISOString(),
+        }))
+      );
     }
 
     if (req.method === 'POST') {
@@ -92,17 +173,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'timeSlotId is required' });
       }
 
-      // 予約枠の空き確認
       const slot = await prisma.timeSlot.findUnique({
         where: { id: timeSlotId },
         include: {
-          _count: {
-            select: {
-              bookings: {
-                where: { status: 'CONFIRMED' },
-              },
-            },
-          },
+          _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
         },
       });
 
@@ -114,13 +188,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'This time slot is fully booked' });
       }
 
-      // 同じユーザーが同じ時間枠に予約済みかチェック
       const existingBooking = await prisma.booking.findFirst({
-        where: {
-          userId: user.id,
-          timeSlotId,
-          status: 'CONFIRMED',
-        },
+        where: { userId: user.id, timeSlotId, status: 'CONFIRMED' },
       });
 
       if (existingBooking) {
@@ -129,19 +198,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // 予約を作成
       const booking = await prisma.booking.create({
-        data: {
-          userId: user.id,
-          timeSlotId,
-          notes,
-        },
-        include: {
-          timeSlot: { select: { date: true, startTime: true, endTime: true } },
-        },
+        data: { userId: user.id, timeSlotId, notes },
+        include: { timeSlot: { select: { date: true, startTime: true, endTime: true } } },
       });
+
+      const dateStr = booking.timeSlot.date.toISOString().split('T')[0];
+      const formattedDate = formatDate(booking.timeSlot.date);
+      const timeRange = `${booking.timeSlot.startTime}〜${booking.timeSlot.endTime}`;
+
+      // Googleカレンダーに追加（非同期で実行、エラーでも予約は成功）
+      const calendarEventId = await addCalendarEvent(
+        `【体験授業】${user.displayName}様`,
+        dateStr,
+        booking.timeSlot.startTime,
+        booking.timeSlot.endTime
+      );
+
+      // カレンダーイベントIDを保存
+      if (calendarEventId) {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: { calendarEventId },
+        });
+      }
+
+      // LINE通知を送信（非同期で実行）
+      sendLineNotification(user.displayName, formattedDate, timeRange, 'created');
 
       return res.status(201).json({
         id: booking.id,
-        date: booking.timeSlot.date.toISOString().split('T')[0],
+        date: dateStr,
         startTime: booking.timeSlot.startTime,
         endTime: booking.timeSlot.endTime,
         status: booking.status,

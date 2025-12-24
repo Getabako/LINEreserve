@@ -42,15 +42,16 @@ model TimeSlot {
 
 // 予約
 model Booking {
-  id         String        @id @default(cuid())
-  userId     String        @map("user_id")
-  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  timeSlotId String        @map("time_slot_id")
-  timeSlot   TimeSlot      @relation(fields: [timeSlotId], references: [id])
-  status     BookingStatus @default(CONFIRMED)
-  notes      String?
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
+  id              String        @id @default(cuid())
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timeSlotId      String        @map("time_slot_id")
+  timeSlot        TimeSlot      @relation(fields: [timeSlotId], references: [id])
+  status          BookingStatus @default(CONFIRMED)
+  notes           String?
+  calendarEventId String?       @map("calendar_event_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   @@index([userId])
   @@index([status])

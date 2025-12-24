@@ -1,9 +1,74 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
+import { google } from 'googleapis';
 
 const prisma = new PrismaClient();
 
+// ====== Google Calendar設定 ======
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'ifjuku@gmail.com';
+
+function getCalendarClient() {
+  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!credentials) return null;
+
+  try {
+    const key = JSON.parse(credentials);
+    const auth = new google.auth.JWT(
+      key.client_email,
+      undefined,
+      key.private_key,
+      ['https://www.googleapis.com/auth/calendar']
+    );
+    return google.calendar({ version: 'v3', auth });
+  } catch {
+    return null;
+  }
+}
+
+async function deleteCalendarEvent(eventId: string): Promise<boolean> {
+  const calendar = getCalendarClient();
+  if (!calendar) return false;
+
+  try {
+    await calendar.events.delete({
+      calendarId: GOOGLE_CALENDAR_ID,
+      eventId: eventId,
+    });
+    return true;
+  } catch (error) {
+    console.error('Calendar event deletion failed:', error);
+    return false;
+  }
+}
+
+// ====== LINE通知設定 ======
+async function sendLineNotification(
+  userName: string,
+  dateStr: string,
+  time: string,
+  action: 'created' | 'cancelled'
+): Promise<void> {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const adminUserId = process.env.LINE_ADMIN_USER_ID;
+
+  if (!token || !adminUserId) return;
+
+  const actionText = action === 'created' ? '🆕 新規予約' : '❌ キャンセル';
+  const message = `${actionText}\n\n👤 ${userName}\n📅 ${dateStr}\n🕐 ${time}\n\n体験授業の予約${action === 'created' ? 'が入りました' : 'がキャンセルされました'}。`;
+
+  try {
+    await axios.post(
+      'https://api.line.me/v2/bot/message/push',
+      { to: adminUserId, messages: [{ type: 'text', text: message }] },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch (error) {
+    console.error('LINE notification failed:', error);
+  }
+}
+
+// ====== LIFF認証 ======
 interface LiffProfile {
   userId: string;
   displayName: string;
@@ -12,9 +77,8 @@ interface LiffProfile {
 
 async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+
   const accessToken = authHeader.substring(7);
 
   if (accessToken === 'mock-access-token-for-development') {
@@ -29,6 +93,16 @@ async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> 
   } catch {
     return null;
   }
+}
+
+// ====== 日付フォーマット ======
+function formatDate(date: Date): string {
+  const days = ['日', '月', '火', '水', '木', '金', '土'];
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const day = days[date.getDay()];
+  return `${y}年${m}月${d}日(${day})`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -63,6 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       where: { id, userId: user.id },
       include: {
         timeSlot: { select: { date: true, startTime: true, endTime: true } },
+        user: { select: { displayName: true } },
       },
     });
 
@@ -87,10 +162,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'Only confirmed bookings can be cancelled' });
       }
 
+      // 予約をキャンセル
       await prisma.booking.update({
         where: { id },
         data: { status: 'CANCELLED' },
       });
+
+      // Googleカレンダーから削除
+      if (booking.calendarEventId) {
+        deleteCalendarEvent(booking.calendarEventId);
+      }
+
+      // LINE通知を送信
+      const formattedDate = formatDate(booking.timeSlot.date);
+      const timeRange = `${booking.timeSlot.startTime}〜${booking.timeSlot.endTime}`;
+      sendLineNotification(booking.user.displayName, formattedDate, timeRange, 'cancelled');
 
       return res.status(200).json({ message: 'Booking cancelled' });
     }
