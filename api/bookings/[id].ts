@@ -13,7 +13,15 @@ function getCalendarClient() {
   if (!credentials) return null;
 
   try {
-    const key = JSON.parse(credentials);
+    // Base64デコードを試み、失敗したらそのままJSONとしてパース
+    let jsonStr = credentials;
+    try {
+      jsonStr = Buffer.from(credentials, 'base64').toString('utf-8');
+    } catch {
+      // Base64でなければそのまま使用
+    }
+
+    const key = JSON.parse(jsonStr);
     const auth = new google.auth.JWT(
       key.client_email,
       undefined,
@@ -21,7 +29,8 @@ function getCalendarClient() {
       ['https://www.googleapis.com/auth/calendar']
     );
     return google.calendar({ version: 'v3', auth });
-  } catch {
+  } catch (error) {
+    console.error('Failed to initialize calendar client:', error);
     return null;
   }
 }
