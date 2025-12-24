@@ -77,23 +77,16 @@ export interface Subject {
 
 export interface TimeSlot {
   id: string;
-  teacherId: string;
-  teacherName: string;
-  teacherPicture?: string;
   date: string;
   startTime: string;
   endTime: string;
   available: boolean;
-  remainingSeats: number;
+  maxCapacity: number;
+  currentBookings: number;
 }
 
 export interface Booking {
   id: string;
-  teacherId: string;
-  teacherName: string;
-  teacherPicture?: string;
-  subjectId: string;
-  subjectName: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -116,17 +109,14 @@ export const subjectApi = {
 };
 
 export const slotApi = {
-  getByDate: (date: string, teacherId?: string) => {
-    const params = new URLSearchParams({ date });
-    if (teacherId) params.append('teacherId', teacherId);
-    return api.get<TimeSlot[]>(`/slots?${params}`);
+  getByDate: (date: string) => {
+    return api.get<TimeSlot[]>(`/slots?date=${date}`);
   },
-  getAvailableDates: () => api.get<{ availableDates: string[] }>('/slots'),
 };
 
 export const bookingApi = {
   getAll: () => api.get<Booking[]>('/bookings'),
-  create: (data: { teacherId: string; subjectId: string; timeSlotId: string; notes?: string }) =>
+  create: (data: { timeSlotId: string; date: string; notes?: string }) =>
     api.post<Booking>('/bookings', data),
   cancel: (id: string) => api.delete<void>(`/bookings/${id}`),
 };

@@ -46,24 +46,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const user = await prisma.user.findUnique({
+    // ユーザーを取得または作成
+    let user = await prisma.user.findUnique({
       where: { lineUserId: profile.userId },
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      user = await prisma.user.create({
+        data: {
+          lineUserId: profile.userId,
+          displayName: profile.displayName,
+          pictureUrl: profile.pictureUrl,
+        },
+      });
     }
 
     if (req.method === 'GET') {
       const bookings = await prisma.booking.findMany({
         where: { userId: user.id },
         include: {
-          teacher: {
-            select: { id: true, name: true, pictureUrl: true },
-          },
-          subject: {
-            select: { id: true, name: true },
-          },
           timeSlot: {
             select: { date: true, startTime: true, endTime: true },
           },
@@ -73,11 +74,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const response = bookings.map((b) => ({
         id: b.id,
-        teacherId: b.teacherId,
-        teacherName: b.teacher.name,
-        teacherPicture: b.teacher.pictureUrl,
-        subjectId: b.subjectId,
-        subjectName: b.subject.name,
         date: b.timeSlot.date.toISOString().split('T')[0],
         startTime: b.timeSlot.startTime,
         endTime: b.timeSlot.endTime,
@@ -90,54 +86,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
-      const { teacherId, subjectId, timeSlotId, notes } = req.body;
+      const { timeSlotId, notes } = req.body;
 
-      if (!teacherId || !subjectId || !timeSlotId) {
-        return res.status(400).json({ error: 'teacherId, subjectId, and timeSlotId are required' });
+      if (!timeSlotId) {
+        return res.status(400).json({ error: 'timeSlotId is required' });
       }
 
       // 予約枠の空き確認
       const slot = await prisma.timeSlot.findUnique({
         where: { id: timeSlotId },
+        include: {
+          _count: {
+            select: {
+              bookings: {
+                where: { status: 'CONFIRMED' },
+              },
+            },
+          },
+        },
       });
 
-      if (!slot || slot.booked >= slot.capacity) {
-        return res.status(400).json({ error: 'This time slot is not available' });
+      if (!slot) {
+        return res.status(404).json({ error: 'Time slot not found' });
       }
 
-      // トランザクションで予約作成と枠の更新を行う
-      const booking = await prisma.$transaction(async (tx) => {
-        // 予約枠を更新
-        await tx.timeSlot.update({
-          where: { id: timeSlotId },
-          data: { booked: { increment: 1 } },
-        });
+      if (slot._count.bookings >= slot.maxCapacity) {
+        return res.status(400).json({ error: 'This time slot is fully booked' });
+      }
 
-        // 予約を作成
-        return tx.booking.create({
-          data: {
-            userId: user.id,
-            teacherId,
-            subjectId,
-            timeSlotId,
-            notes,
-          },
-          include: {
-            teacher: { select: { name: true } },
-            subject: { select: { name: true } },
-            timeSlot: { select: { date: true, startTime: true, endTime: true } },
-          },
-        });
+      // 同じユーザーが同じ時間枠に予約済みかチェック
+      const existingBooking = await prisma.booking.findFirst({
+        where: {
+          userId: user.id,
+          timeSlotId,
+          status: 'CONFIRMED',
+        },
+      });
+
+      if (existingBooking) {
+        return res.status(400).json({ error: 'You have already booked this time slot' });
+      }
+
+      // 予約を作成
+      const booking = await prisma.booking.create({
+        data: {
+          userId: user.id,
+          timeSlotId,
+          notes,
+        },
+        include: {
+          timeSlot: { select: { date: true, startTime: true, endTime: true } },
+        },
       });
 
       return res.status(201).json({
         id: booking.id,
-        teacherName: booking.teacher.name,
-        subjectName: booking.subject.name,
         date: booking.timeSlot.date.toISOString().split('T')[0],
         startTime: booking.timeSlot.startTime,
         endTime: booking.timeSlot.endTime,
         status: booking.status,
+        createdAt: booking.createdAt.toISOString(),
       });
     }
 

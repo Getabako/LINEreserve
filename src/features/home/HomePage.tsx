@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HiCalendarDays, HiUserGroup, HiClipboardDocumentList, HiAcademicCap } from 'react-icons/hi2';
+import { HiCalendarDays, HiClipboardDocumentList, HiAcademicCap } from 'react-icons/hi2';
 import { Header } from '../../components/common/Header';
 import { Loading } from '../../components/common/Loading';
 import { userApi, type User } from '../../lib/api';
@@ -58,32 +58,27 @@ export const HomePage: React.FC = () => {
           </button>
         </div>
 
-        {/* メニュー */}
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => navigate('/teachers')}
-            className="card flex flex-col items-center py-6"
-          >
-            <HiUserGroup className="w-8 h-8 text-line-green mb-2" />
-            <span className="text-sm font-medium">講師一覧</span>
-          </button>
-
-          <button
-            onClick={() => navigate('/bookings')}
-            className="card flex flex-col items-center py-6"
-          >
-            <HiClipboardDocumentList className="w-8 h-8 text-line-green mb-2" />
-            <span className="text-sm font-medium">予約履歴</span>
-          </button>
-        </div>
+        {/* 予約履歴へのリンク */}
+        <button
+          onClick={() => navigate('/bookings')}
+          className="card w-full flex items-center gap-4"
+        >
+          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+            <HiClipboardDocumentList className="w-6 h-6 text-gray-600" />
+          </div>
+          <div className="text-left">
+            <p className="font-medium">予約履歴</p>
+            <p className="text-sm text-gray-500">予約の確認・キャンセル</p>
+          </div>
+        </button>
 
         {/* お知らせ */}
         <div className="card">
           <h3 className="font-semibold mb-2">体験授業について</h3>
           <ul className="text-sm text-gray-600 space-y-1">
             <li>・1回60分の無料体験授業です</li>
-            <li>・お好きな科目・講師をお選びいただけます</li>
-            <li>・予約の変更・キャンセルは前日まで可能です</li>
+            <li>・カレンダーからお好きな日時をお選びください</li>
+            <li>・予約のキャンセルは予約履歴から行えます</li>
           </ul>
         </div>
       </main>

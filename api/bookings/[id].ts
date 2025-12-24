@@ -62,9 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const booking = await prisma.booking.findFirst({
       where: { id, userId: user.id },
       include: {
-        teacher: { select: { id: true, name: true, pictureUrl: true } },
-        subject: { select: { id: true, name: true } },
-        timeSlot: { select: { id: true, date: true, startTime: true, endTime: true } },
+        timeSlot: { select: { date: true, startTime: true, endTime: true } },
       },
     });
 
@@ -75,11 +73,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       return res.status(200).json({
         id: booking.id,
-        teacherId: booking.teacherId,
-        teacherName: booking.teacher.name,
-        teacherPicture: booking.teacher.pictureUrl,
-        subjectId: booking.subjectId,
-        subjectName: booking.subject.name,
         date: booking.timeSlot.date.toISOString().split('T')[0],
         startTime: booking.timeSlot.startTime,
         endTime: booking.timeSlot.endTime,
@@ -90,19 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'DELETE') {
-      // キャンセル処理（トランザクション）
-      await prisma.$transaction(async (tx) => {
-        // 予約をキャンセル状態に
-        await tx.booking.update({
-          where: { id },
-          data: { status: 'CANCELLED' },
-        });
+      if (booking.status !== 'CONFIRMED') {
+        return res.status(400).json({ error: 'Only confirmed bookings can be cancelled' });
+      }
 
-        // 予約枠の空きを戻す
-        await tx.timeSlot.update({
-          where: { id: booking.timeSlot.id },
-          data: { booked: { decrement: 1 } },
-        });
+      await prisma.booking.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
       });
 
       return res.status(200).json({ message: 'Booking cancelled' });

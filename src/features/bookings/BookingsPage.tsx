@@ -57,10 +57,10 @@ export const BookingsPage: React.FC = () => {
               <div key={booking.id} className="card">
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <p className="font-semibold">
-                      {format(dateObj, 'M月d日(E)', { locale: ja })}
+                    <p className="font-semibold text-lg">
+                      {format(dateObj, 'yyyy年M月d日(E)', { locale: ja })}
                     </p>
-                    <p className="text-line-green font-medium">
+                    <p className="text-line-green font-medium text-xl">
                       {booking.startTime} - {booking.endTime}
                     </p>
                   </div>
@@ -69,21 +69,14 @@ export const BookingsPage: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="border-t pt-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 text-sm w-12">講師</span>
-                    <span className="font-medium">{booking.teacherName}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 text-sm w-12">科目</span>
-                    <span>{booking.subjectName}</span>
-                  </div>
+                <div className="border-t pt-3">
+                  <p className="text-gray-600">体験授業（60分）</p>
                 </div>
 
                 {booking.status === 'CONFIRMED' && (
                   <button
                     onClick={() => handleCancel(booking.id)}
-                    className="mt-4 w-full py-2 text-red-500 border border-red-300 rounded-lg text-sm"
+                    className="mt-4 w-full py-2 text-red-500 border border-red-300 rounded-lg text-sm hover:bg-red-50 transition"
                   >
                     キャンセルする
                   </button>

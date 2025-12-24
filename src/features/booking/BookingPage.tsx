@@ -5,28 +5,21 @@ import { ja } from 'date-fns/locale';
 import { Header } from '../../components/common/Header';
 import { Loading } from '../../components/common/Loading';
 import { useBookingStore } from '../../stores/bookingStore';
-import { teacherApi, subjectApi, slotApi, type Teacher, type Subject, type TimeSlot } from '../../lib/api';
+import { slotApi, bookingApi, type TimeSlot } from '../../lib/api';
 
 export const BookingPage: React.FC = () => {
   const navigate = useNavigate();
   const {
-    selectedTeacherId,
-    selectedSubjectId,
     selectedDate,
     selectedSlotId,
-    setSelectedTeacher,
-    setSelectedSubject,
     setSelectedDate,
     setSelectedSlot,
-    createBooking,
   } = useBookingStore();
 
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [step, setStep] = useState(1); // 1: 科目・講師, 2: 日程, 3: 確認
+  const [step, setStep] = useState(1); // 1: 日程選択, 2: 確認
 
   // 2週間分の日付を生成
   const dates = Array.from({ length: 14 }, (_, i) => {
@@ -35,62 +28,41 @@ export const BookingPage: React.FC = () => {
   });
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [teachersData, subjectsData] = await Promise.all([
-          teacherApi.getAll(),
-          subjectApi.getAll(),
-        ]);
-        setTeachers(teachersData);
-        setSubjects(subjectsData);
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    if (selectedDate && selectedTeacherId) {
+    if (selectedDate) {
       const fetchSlots = async () => {
+        setIsLoading(true);
         try {
-          const slotsData = await slotApi.getByDate(selectedDate, selectedTeacherId);
+          const slotsData = await slotApi.getByDate(selectedDate);
           setSlots(slotsData);
         } catch (error) {
           console.error('Failed to fetch slots:', error);
           setSlots([]);
+        } finally {
+          setIsLoading(false);
         }
       };
       fetchSlots();
     }
-  }, [selectedDate, selectedTeacherId]);
+  }, [selectedDate]);
 
   const handleSubmit = async () => {
-    if (!selectedTeacherId || !selectedSubjectId || !selectedSlotId) return;
+    if (!selectedSlotId || !selectedDate) return;
 
     setIsSubmitting(true);
     try {
-      await createBooking({
-        teacherId: selectedTeacherId,
-        subjectId: selectedSubjectId,
+      await bookingApi.create({
         timeSlotId: selectedSlotId,
+        date: selectedDate,
       });
       navigate('/booking/complete');
     } catch (error) {
-      alert('予約に失敗しました');
+      console.error('Booking failed:', error);
+      alert('予約に失敗しました。もう一度お試しください。');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isLoading) {
-    return <Loading fullScreen />;
-  }
-
-  const selectedTeacher = teachers.find((t) => t.id === selectedTeacherId);
-  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId);
   const selectedSlot = slots.find((s) => s.id === selectedSlotId);
 
   return (
@@ -100,7 +72,7 @@ export const BookingPage: React.FC = () => {
       <main className="p-4 pb-24">
         {/* ステップ表示 */}
         <div className="flex items-center justify-center gap-2 mb-6">
-          {[1, 2, 3].map((s) => (
+          {[1, 2].map((s) => (
             <React.Fragment key={s}>
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
@@ -109,72 +81,13 @@ export const BookingPage: React.FC = () => {
               >
                 {s}
               </div>
-              {s < 3 && <div className={`w-8 h-0.5 ${s < step ? 'bg-line-green' : 'bg-gray-200'}`} />}
+              {s < 2 && <div className={`w-8 h-0.5 ${s < step ? 'bg-line-green' : 'bg-gray-200'}`} />}
             </React.Fragment>
           ))}
         </div>
 
-        {/* Step 1: 科目・講師選択 */}
+        {/* Step 1: 日程選択 */}
         {step === 1 && (
-          <div className="space-y-6">
-            {/* 科目選択 */}
-            <div className="card">
-              <h3 className="font-semibold mb-3">科目を選択</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {subjects.map((subject) => (
-                  <button
-                    key={subject.id}
-                    onClick={() => setSelectedSubject(subject.id)}
-                    className={`p-3 rounded-lg border text-sm transition ${
-                      selectedSubjectId === subject.id
-                        ? 'border-line-green bg-line-green/10 text-line-green'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {subject.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 講師選択 */}
-            <div className="card">
-              <h3 className="font-semibold mb-3">講師を選択</h3>
-              <div className="space-y-2">
-                {teachers.map((teacher) => (
-                  <button
-                    key={teacher.id}
-                    onClick={() => setSelectedTeacher(teacher.id)}
-                    className={`w-full p-3 rounded-lg border flex items-center gap-3 transition ${
-                      selectedTeacherId === teacher.id
-                        ? 'border-line-green bg-line-green/10'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden">
-                      {teacher.pictureUrl ? (
-                        <img src={teacher.pictureUrl} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400 font-bold">
-                          {teacher.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-left">
-                      <p className="font-medium">{teacher.name}</p>
-                      {teacher.specialties.length > 0 && (
-                        <p className="text-xs text-gray-500">{teacher.specialties.join('・')}</p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: 日程選択 */}
-        {step === 2 && (
           <div className="space-y-6">
             {/* 日付選択 */}
             <div className="card">
@@ -182,18 +95,24 @@ export const BookingPage: React.FC = () => {
               <div className="grid grid-cols-4 gap-2">
                 {dates.map((date) => {
                   const dateObj = parseISO(date);
+                  const isToday = date === format(new Date(), 'yyyy-MM-dd');
                   return (
                     <button
                       key={date}
-                      onClick={() => setSelectedDate(date)}
+                      onClick={() => {
+                        setSelectedDate(date);
+                        setSelectedSlot(null);
+                      }}
                       className={`p-2 rounded-lg border text-center transition ${
                         selectedDate === date
                           ? 'border-line-green bg-line-green/10 text-line-green'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <p className="text-xs text-gray-500">{format(dateObj, 'E', { locale: ja })}</p>
-                      <p className="font-medium">{format(dateObj, 'd')}</p>
+                      <p className="text-xs text-gray-500">
+                        {isToday ? '今日' : format(dateObj, 'E', { locale: ja })}
+                      </p>
+                      <p className="font-medium">{format(dateObj, 'M/d')}</p>
                     </button>
                   );
                 })}
@@ -203,8 +122,14 @@ export const BookingPage: React.FC = () => {
             {/* 時間枠選択 */}
             {selectedDate && (
               <div className="card">
-                <h3 className="font-semibold mb-3">時間を選択</h3>
-                {slots.length === 0 ? (
+                <h3 className="font-semibold mb-3">
+                  {format(parseISO(selectedDate), 'M月d日(E)', { locale: ja })}の時間を選択
+                </h3>
+                {isLoading ? (
+                  <div className="py-8">
+                    <Loading text="読み込み中..." />
+                  </div>
+                ) : slots.length === 0 ? (
                   <p className="text-gray-500 text-center py-4">この日は予約枠がありません</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
@@ -232,28 +157,31 @@ export const BookingPage: React.FC = () => {
           </div>
         )}
 
-        {/* Step 3: 確認 */}
-        {step === 3 && (
+        {/* Step 2: 確認 */}
+        {step === 2 && (
           <div className="card">
             <h3 className="font-semibold mb-4">予約内容の確認</h3>
             <div className="space-y-3">
               <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">科目</span>
-                <span className="font-medium">{selectedSubject?.name}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">講師</span>
-                <span className="font-medium">{selectedTeacher?.name}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b">
-                <span className="text-gray-500">日時</span>
+                <span className="text-gray-500">日付</span>
                 <span className="font-medium">
-                  {selectedDate && format(parseISO(selectedDate), 'M月d日(E)', { locale: ja })}
-                  {' '}
+                  {selectedDate && format(parseISO(selectedDate), 'yyyy年M月d日(E)', { locale: ja })}
+                </span>
+              </div>
+              <div className="flex justify-between py-2 border-b">
+                <span className="text-gray-500">時間</span>
+                <span className="font-medium">
                   {selectedSlot?.startTime}〜{selectedSlot?.endTime}
                 </span>
               </div>
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">内容</span>
+                <span className="font-medium">体験授業（60分）</span>
+              </div>
             </div>
+            <p className="text-sm text-gray-500 mt-4">
+              ※ キャンセルは予約一覧から行えます
+            </p>
           </div>
         )}
       </main>
@@ -269,13 +197,10 @@ export const BookingPage: React.FC = () => {
               戻る
             </button>
           )}
-          {step < 3 ? (
+          {step < 2 ? (
             <button
               onClick={() => setStep(step + 1)}
-              disabled={
-                (step === 1 && (!selectedSubjectId || !selectedTeacherId)) ||
-                (step === 2 && !selectedSlotId)
-              }
+              disabled={!selectedSlotId}
               className="btn-primary flex-1"
             >
               次へ
