@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { PrismaClient } from '@prisma/client';
 import axios from 'axios';
-import { google } from 'googleapis';
+import { google, Auth } from 'googleapis';
 
 const prisma = new PrismaClient();
 
 // ====== Google Calendar設定 ======
 const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'ifjuku@gmail.com';
 
-function getCalendarClient() {
+async function getCalendarClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
     console.error('GOOGLE_SERVICE_ACCOUNT_KEY is not set');
@@ -26,12 +26,15 @@ function getCalendarClient() {
     }
 
     const key = JSON.parse(jsonStr);
-    const auth = new google.auth.JWT({
-      email: key.client_email,
-      key: key.private_key,
+    const auth = new Auth.GoogleAuth({
+      credentials: {
+        client_email: key.client_email,
+        private_key: key.private_key,
+      },
       scopes: ['https://www.googleapis.com/auth/calendar'],
     });
-    return google.calendar({ version: 'v3', auth });
+    const authClient = await auth.getClient();
+    return google.calendar({ version: 'v3', auth: authClient as Auth.OAuth2Client });
   } catch (error) {
     console.error('Failed to initialize calendar client:', error);
     return null;
@@ -39,7 +42,7 @@ function getCalendarClient() {
 }
 
 async function deleteCalendarEvent(eventId: string): Promise<boolean> {
-  const calendar = getCalendarClient();
+  const calendar = await getCalendarClient();
   if (!calendar) return false;
 
   try {
