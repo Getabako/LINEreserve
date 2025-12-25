@@ -31,12 +31,11 @@ function getCalendarClient() {
     console.log('Parsed credentials - client_email:', key.client_email);
     console.log('Private key starts with:', key.private_key?.substring(0, 30));
 
-    const auth = new google.auth.JWT(
-      key.client_email,
-      undefined,
-      key.private_key,
-      ['https://www.googleapis.com/auth/calendar']
-    );
+    const auth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: ['https://www.googleapis.com/auth/calendar'],
+    });
     return google.calendar({ version: 'v3', auth });
   } catch (error) {
     console.error('Failed to initialize calendar client:', error);
@@ -88,12 +87,11 @@ async function addCalendarEvent(
       return null;
     }
 
-    const auth = new google.auth.JWT(
-      key.client_email,
-      undefined,
-      key.private_key,
-      ['https://www.googleapis.com/auth/calendar']
-    );
+    const auth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: ['https://www.googleapis.com/auth/calendar'],
+    });
 
     console.log('JWT created, authorizing...');
     await auth.authorize();

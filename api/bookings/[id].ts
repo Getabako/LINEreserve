@@ -26,12 +26,11 @@ function getCalendarClient() {
     }
 
     const key = JSON.parse(jsonStr);
-    const auth = new google.auth.JWT(
-      key.client_email,
-      undefined,
-      key.private_key,
-      ['https://www.googleapis.com/auth/calendar']
-    );
+    const auth = new google.auth.JWT({
+      email: key.client_email,
+      key: key.private_key,
+      scopes: ['https://www.googleapis.com/auth/calendar'],
+    });
     return google.calendar({ version: 'v3', auth });
   } catch (error) {
     console.error('Failed to initialize calendar client:', error);
