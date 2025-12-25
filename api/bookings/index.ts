@@ -50,10 +50,40 @@ async function addCalendarEvent(
   startTime: string,
   endTime: string
 ): Promise<string | null> {
-  const calendar = getCalendarClient();
-  if (!calendar) return null;
+  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!credentials) {
+    console.error('GOOGLE_SERVICE_ACCOUNT_KEY is not set');
+    return null;
+  }
 
   try {
+    let jsonStr: string;
+    if (credentials.trim().startsWith('{')) {
+      jsonStr = credentials;
+      console.log('Calendar: Using raw JSON');
+    } else {
+      jsonStr = Buffer.from(credentials, 'base64').toString('utf-8');
+      console.log('Calendar: Decoded Base64');
+    }
+
+    const key = JSON.parse(jsonStr);
+    console.log('Calendar: client_email =', key.client_email);
+    console.log('Calendar: private_key length =', key.private_key?.length);
+
+    const auth = new google.auth.JWT(
+      key.client_email,
+      undefined,
+      key.private_key,
+      ['https://www.googleapis.com/auth/calendar']
+    );
+
+    // 明示的に認証を実行
+    console.log('Calendar: Authorizing...');
+    await auth.authorize();
+    console.log('Calendar: Authorized successfully');
+
+    const calendar = google.calendar({ version: 'v3', auth });
+
     const response = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
       requestBody: {
@@ -62,6 +92,7 @@ async function addCalendarEvent(
         end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
       },
     });
+    console.log('Calendar: Event created, id =', response.data.id);
     return response.data.id || null;
   } catch (error) {
     console.error('Calendar event creation failed:', error);
