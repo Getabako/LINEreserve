@@ -10,15 +10,19 @@ const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'ifjuku@gmail.com';
 
 function getCalendarClient() {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentials) return null;
+  if (!credentials) {
+    console.error('GOOGLE_SERVICE_ACCOUNT_KEY is not set');
+    return null;
+  }
 
   try {
-    // Base64デコードを試み、失敗したらそのままJSONとしてパース
-    let jsonStr = credentials;
-    try {
+    let jsonStr: string;
+
+    // Base64かJSONかを判定（{で始まるならJSON）
+    if (credentials.trim().startsWith('{')) {
+      jsonStr = credentials;
+    } else {
       jsonStr = Buffer.from(credentials, 'base64').toString('utf-8');
-    } catch {
-      // Base64でなければそのまま使用
     }
 
     const key = JSON.parse(jsonStr);
