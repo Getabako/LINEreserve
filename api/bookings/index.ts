@@ -15,44 +15,18 @@ async function addCalendarEvent(
   endTime: string
 ): Promise<string | null> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-
-  console.log('=== Calendar Debug Start ===');
-  console.log('GOOGLE_SERVICE_ACCOUNT_KEY exists:', !!credentials);
-  console.log('GOOGLE_SERVICE_ACCOUNT_KEY length:', credentials?.length);
-  console.log('First 50 chars:', credentials?.substring(0, 50));
-
-  if (!credentials) {
-    console.error('GOOGLE_SERVICE_ACCOUNT_KEY is not set');
-    return null;
-  }
+  if (!credentials) return null;
 
   try {
-    let jsonStr: string;
-    const trimmed = credentials.trim();
-
-    if (trimmed.startsWith('{')) {
-      jsonStr = credentials;
-      console.log('Mode: Raw JSON');
-    } else {
-      jsonStr = Buffer.from(credentials, 'base64').toString('utf-8');
-      console.log('Mode: Base64 decoded');
-      console.log('Decoded first 100 chars:', jsonStr.substring(0, 100));
-    }
+    // Base64かJSONかを判定
+    const jsonStr = credentials.trim().startsWith('{')
+      ? credentials
+      : Buffer.from(credentials, 'base64').toString('utf-8');
 
     const key = JSON.parse(jsonStr);
-    console.log('Parsed keys:', Object.keys(key));
-    console.log('client_email:', key.client_email);
-    console.log('private_key exists:', !!key.private_key);
-    console.log('private_key type:', typeof key.private_key);
-    console.log('private_key length:', key.private_key?.length);
-    console.log('private_key starts with:', key.private_key?.substring(0, 40));
+    if (!key.private_key) return null;
 
-    if (!key.private_key) {
-      console.error('private_key is missing or empty!');
-      return null;
-    }
-
-    // GoogleAuthを使用
+    // GoogleAuthを使用（google.auth.JWTはVercelで動作しない）
     const auth = new Auth.GoogleAuth({
       credentials: {
         client_email: key.client_email,
@@ -61,10 +35,7 @@ async function addCalendarEvent(
       scopes: ['https://www.googleapis.com/auth/calendar'],
     });
 
-    console.log('GoogleAuth created, getting client...');
     const authClient = await auth.getClient();
-    console.log('Auth client obtained!');
-
     const calendar = google.calendar({ version: 'v3', auth: authClient as Auth.OAuth2Client });
 
     const response = await calendar.events.insert({
@@ -75,12 +46,10 @@ async function addCalendarEvent(
         end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
       },
     });
-    console.log('Event created, id =', response.data.id);
-    console.log('=== Calendar Debug End ===');
+
     return response.data.id || null;
   } catch (error) {
     console.error('Calendar event creation failed:', error);
-    console.log('=== Calendar Debug End (Error) ===');
     return null;
   }
 }
