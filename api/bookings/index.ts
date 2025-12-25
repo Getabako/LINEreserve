@@ -51,6 +51,12 @@ async function addCalendarEvent(
   endTime: string
 ): Promise<string | null> {
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+  console.log('=== Calendar Debug Start ===');
+  console.log('GOOGLE_SERVICE_ACCOUNT_KEY exists:', !!credentials);
+  console.log('GOOGLE_SERVICE_ACCOUNT_KEY length:', credentials?.length);
+  console.log('First 50 chars:', credentials?.substring(0, 50));
+
   if (!credentials) {
     console.error('GOOGLE_SERVICE_ACCOUNT_KEY is not set');
     return null;
@@ -58,17 +64,29 @@ async function addCalendarEvent(
 
   try {
     let jsonStr: string;
-    if (credentials.trim().startsWith('{')) {
+    const trimmed = credentials.trim();
+
+    if (trimmed.startsWith('{')) {
       jsonStr = credentials;
-      console.log('Calendar: Using raw JSON');
+      console.log('Mode: Raw JSON');
     } else {
       jsonStr = Buffer.from(credentials, 'base64').toString('utf-8');
-      console.log('Calendar: Decoded Base64');
+      console.log('Mode: Base64 decoded');
+      console.log('Decoded first 100 chars:', jsonStr.substring(0, 100));
     }
 
     const key = JSON.parse(jsonStr);
-    console.log('Calendar: client_email =', key.client_email);
-    console.log('Calendar: private_key length =', key.private_key?.length);
+    console.log('Parsed keys:', Object.keys(key));
+    console.log('client_email:', key.client_email);
+    console.log('private_key exists:', !!key.private_key);
+    console.log('private_key type:', typeof key.private_key);
+    console.log('private_key length:', key.private_key?.length);
+    console.log('private_key starts with:', key.private_key?.substring(0, 40));
+
+    if (!key.private_key) {
+      console.error('private_key is missing or empty!');
+      return null;
+    }
 
     const auth = new google.auth.JWT(
       key.client_email,
@@ -77,10 +95,9 @@ async function addCalendarEvent(
       ['https://www.googleapis.com/auth/calendar']
     );
 
-    // 明示的に認証を実行
-    console.log('Calendar: Authorizing...');
+    console.log('JWT created, authorizing...');
     await auth.authorize();
-    console.log('Calendar: Authorized successfully');
+    console.log('Authorization successful!');
 
     const calendar = google.calendar({ version: 'v3', auth });
 
@@ -92,10 +109,12 @@ async function addCalendarEvent(
         end: { dateTime: `${date}T${endTime}:00`, timeZone: 'Asia/Tokyo' },
       },
     });
-    console.log('Calendar: Event created, id =', response.data.id);
+    console.log('Event created, id =', response.data.id);
+    console.log('=== Calendar Debug End ===');
     return response.data.id || null;
   } catch (error) {
     console.error('Calendar event creation failed:', error);
+    console.log('=== Calendar Debug End (Error) ===');
     return null;
   }
 }
