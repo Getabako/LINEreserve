@@ -35,9 +35,16 @@ export const initializeLiff = async (): Promise<LiffProfile | null> => {
     await liff.init({ liffId: LIFF_ID });
     isInitialized = true;
 
+    // LINEアプリ内の場合は自動ログイン済み
+    if (liff.isInClient()) {
+      return getLiffProfile();
+    }
+
+    // 外部ブラウザでログインしていない場合
     if (!liff.isLoggedIn()) {
       liff.login({ redirectUri: window.location.href });
-      return null;
+      // リダイレクト中は永久に待機（ページが再読み込みされるまで）
+      return new Promise(() => {});
     }
 
     return getLiffProfile();
