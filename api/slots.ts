@@ -165,9 +165,11 @@ function isSlotOverlapping(
 
 // 日付を YYYY-MM-DD 形式で取得（日本時間）
 function getJSTDateString(date: Date): string {
-  const year = date.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric' });
-  const month = date.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: '2-digit' });
-  const day = date.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', day: '2-digit' });
+  // UTC時間に9時間（日本時間オフセット）を加算
+  const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const year = jstDate.getUTCFullYear();
+  const month = String(jstDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(jstDate.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -257,19 +259,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const todayStr = getJSTDateString(now);
         const isToday = date === todayStr;
 
-        // 日本時間での現在時刻を取得
-        const currentHours = parseInt(now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', hour12: false }));
-        const currentMins = parseInt(now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', minute: '2-digit' }));
+        // 日本時間での現在時刻を取得（UTC+9）
+        const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+        const currentHours = jstNow.getUTCHours();
+        const currentMins = jstNow.getUTCMinutes();
         const currentMinutes = isToday
           ? currentHours * 60 + currentMins + 60 // 1時間後から予約可能
           : 0;
 
-        console.log(`Today: ${todayStr}, isToday: ${isToday}, currentMinutes: ${currentMinutes}`);
+        console.log(`Today: ${todayStr}, requested date: ${date}, isToday: ${isToday}, currentHours: ${currentHours}, currentMins: ${currentMins}, currentMinutes: ${currentMinutes}`);
+
+        console.log(`Generating default time slots. Total calendar events: ${calendarEvents.length}`);
 
         response = DEFAULT_TIME_SLOTS
           .map((slot, index) => {
             const slotStartMinutes = timeToMinutes(slot.startTime);
             const slotEndMinutes = timeToMinutes(slot.endTime);
+
+            console.log(`Checking slot ${slot.startTime}-${slot.endTime} (${slotStartMinutes}-${slotEndMinutes} minutes)`);
 
             // 当日で過ぎた時間枠はスキップ
             if (slotStartMinutes < currentMinutes) {
@@ -284,6 +291,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return null;
             }
 
+            console.log(`Adding available slot: ${slot.startTime}`);
             // 動的に生成したスロットを返す
             return {
               id: `dynamic-${date}-${index}`,
