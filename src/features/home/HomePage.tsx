@@ -30,7 +30,7 @@ export const HomePage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-line-light">
-      <Header title="体験授業予約" />
+      <Header title="無料相談予約" />
 
       <main className="p-4 pb-8 space-y-6">
         {/* ウェルカムカード */}
@@ -48,7 +48,7 @@ export const HomePage: React.FC = () => {
 
         {/* メインアクション */}
         <div className="card">
-          <h2 className="text-lg font-semibold mb-4">体験授業を予約する</h2>
+          <h2 className="text-lg font-semibold mb-4">無料相談を予約する</h2>
           <button
             onClick={() => navigate('/booking')}
             className="btn-primary w-full flex items-center justify-center gap-2"
@@ -74,9 +74,9 @@ export const HomePage: React.FC = () => {
 
         {/* お知らせ */}
         <div className="card">
-          <h3 className="font-semibold mb-2">体験授業について</h3>
+          <h3 className="font-semibold mb-2">無料相談について</h3>
           <ul className="text-sm text-gray-600 space-y-1">
-            <li>・1回60分の無料体験授業です</li>
+            <li>・1回60分の無料相談です</li>
             <li>・カレンダーからお好きな日時をお選びください</li>
             <li>・予約のキャンセルは予約履歴から行えます</li>
           </ul>

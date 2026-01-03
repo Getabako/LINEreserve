@@ -67,7 +67,7 @@ async function sendLineNotification(
   if (!token || !adminUserId) return;
 
   const actionText = action === 'created' ? '🆕 新規予約' : '❌ キャンセル';
-  const message = `${actionText}\n\n👤 ${userName}\n📅 ${dateStr}\n🕐 ${time}\n\n体験授業の予約${action === 'created' ? 'が入りました' : 'がキャンセルされました'}。`;
+  const message = `${actionText}\n\n👤 ${userName}\n📅 ${dateStr}\n🕐 ${time}\n\n無料相談の予約${action === 'created' ? 'が入りました' : 'がキャンセルされました'}。`;
 
   try {
     await axios.post(
@@ -170,29 +170,99 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (req.method === 'POST') {
-      const { timeSlotId, notes } = req.body;
+      const { timeSlotId, date, notes } = req.body;
 
       if (!timeSlotId) {
         return res.status(400).json({ error: 'timeSlotId is required' });
       }
 
-      const slot = await prisma.timeSlot.findUnique({
-        where: { id: timeSlotId },
-        include: {
-          _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
-        },
-      });
+      let slot;
+      let actualTimeSlotId = timeSlotId;
 
-      if (!slot) {
-        return res.status(404).json({ error: 'Time slot not found' });
-      }
+      // 動的に生成されたスロットかどうかをチェック
+      if (timeSlotId.startsWith('dynamic-')) {
+        // dynamic-{date}-{index} 形式から情報を抽出
+        const parts = timeSlotId.split('-');
+        const slotDate = `${parts[1]}-${parts[2]}-${parts[3]}`;
+        const slotIndex = parseInt(parts[4], 10);
 
-      if (slot._count.bookings >= slot.maxCapacity) {
-        return res.status(400).json({ error: 'This time slot is fully booked' });
+        // デフォルトの時間枠定義
+        const DEFAULT_TIME_SLOTS = [
+          { startTime: '10:00', endTime: '11:00' },
+          { startTime: '11:00', endTime: '12:00' },
+          { startTime: '13:00', endTime: '14:00' },
+          { startTime: '14:00', endTime: '15:00' },
+          { startTime: '15:00', endTime: '16:00' },
+          { startTime: '16:00', endTime: '17:00' },
+          { startTime: '17:00', endTime: '18:00' },
+        ];
+
+        const slotInfo = DEFAULT_TIME_SLOTS[slotIndex];
+        if (!slotInfo) {
+          return res.status(400).json({ error: 'Invalid time slot' });
+        }
+
+        // TimeSlotがすでに存在するかチェック（同じ日付と開始時間）
+        const targetDate = new Date(slotDate);
+        const nextDate = new Date(targetDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+
+        const existingSlot = await prisma.timeSlot.findFirst({
+          where: {
+            date: {
+              gte: targetDate,
+              lt: nextDate,
+            },
+            startTime: slotInfo.startTime,
+          },
+          include: {
+            _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
+          },
+        });
+
+        if (existingSlot) {
+          // 既存のスロットを使用
+          slot = existingSlot;
+          actualTimeSlotId = existingSlot.id;
+
+          if (slot._count.bookings >= slot.maxCapacity) {
+            return res.status(400).json({ error: 'This time slot is fully booked' });
+          }
+        } else {
+          // 新しいTimeSlotを作成
+          slot = await prisma.timeSlot.create({
+            data: {
+              date: targetDate,
+              startTime: slotInfo.startTime,
+              endTime: slotInfo.endTime,
+              maxCapacity: 1,
+              isActive: true,
+            },
+          });
+          actualTimeSlotId = slot.id;
+          // 作成したばかりなので予約数は0
+          (slot as typeof slot & { _count: { bookings: number } })._count = { bookings: 0 };
+        }
+      } else {
+        // 既存のTimeSlotを使用
+        slot = await prisma.timeSlot.findUnique({
+          where: { id: timeSlotId },
+          include: {
+            _count: { select: { bookings: { where: { status: 'CONFIRMED' } } } },
+          },
+        });
+
+        if (!slot) {
+          return res.status(404).json({ error: 'Time slot not found' });
+        }
+
+        if (slot._count.bookings >= slot.maxCapacity) {
+          return res.status(400).json({ error: 'This time slot is fully booked' });
+        }
       }
 
       const existingBooking = await prisma.booking.findFirst({
-        where: { userId: user.id, timeSlotId, status: 'CONFIRMED' },
+        where: { userId: user.id, timeSlotId: actualTimeSlotId, status: 'CONFIRMED' },
       });
 
       if (existingBooking) {
@@ -201,7 +271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // 予約を作成
       const booking = await prisma.booking.create({
-        data: { userId: user.id, timeSlotId, notes },
+        data: { userId: user.id, timeSlotId: actualTimeSlotId, notes },
         include: { timeSlot: { select: { date: true, startTime: true, endTime: true } } },
       });
 
@@ -211,7 +281,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Googleカレンダーに追加（非同期で実行、エラーでも予約は成功）
       const calendarEventId = await addCalendarEvent(
-        `【体験授業】${user.displayName}様`,
+        `【無料相談】${user.displayName}様`,
         dateStr,
         booking.timeSlot.startTime,
         booking.timeSlot.endTime

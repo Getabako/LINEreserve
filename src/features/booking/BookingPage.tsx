@@ -67,7 +67,7 @@ export const BookingPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-line-light">
-      <Header title="体験授業予約" showBack />
+      <Header title="無料相談予約" showBack />
 
       <main className="p-4 pb-24">
         {/* ステップ表示 */}
@@ -176,7 +176,7 @@ export const BookingPage: React.FC = () => {
               </div>
               <div className="flex justify-between py-2">
                 <span className="text-gray-500">内容</span>
-                <span className="font-medium">体験授業（60分）</span>
+                <span className="font-medium">無料相談（60分）</span>
               </div>
             </div>
             <p className="text-sm text-gray-500 mt-4">
