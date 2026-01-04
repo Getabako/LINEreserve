@@ -201,29 +201,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       nextDate.setDate(nextDate.getDate() + 1);
 
       // TimeSlotテーブルからデータを取得（存在する場合）
-      const existingSlots = await prisma.timeSlot.findMany({
-        where: {
-          date: {
-            gte: targetDate,
-            lt: nextDate,
+      let existingSlots: Array<{
+        id: string;
+        date: Date;
+        startTime: string;
+        endTime: string;
+        maxCapacity: number;
+        _count: { bookings: number };
+      }> = [];
+
+      try {
+        existingSlots = await prisma.timeSlot.findMany({
+          where: {
+            date: {
+              gte: targetDate,
+              lt: nextDate,
+            },
+            isActive: true,
           },
-          isActive: true,
-        },
-        include: {
-          _count: {
-            select: {
-              bookings: {
-                where: {
-                  status: 'CONFIRMED',
+          include: {
+            _count: {
+              select: {
+                bookings: {
+                  where: {
+                    status: 'CONFIRMED',
+                  },
                 },
               },
             },
           },
-        },
-        orderBy: { startTime: 'asc' },
-      });
-
-      console.log(`Found ${existingSlots.length} existing time slots in database`);
+          orderBy: { startTime: 'asc' },
+        });
+        console.log(`Found ${existingSlots.length} existing time slots in database`);
+      } catch (dbError) {
+        console.log('Database query failed, using default time slots:', dbError);
+        // データベースエラー時は空配列としてデフォルト時間枠を使用
+        existingSlots = [];
+      }
 
       // TimeSlotが存在する場合はそれを使用、なければデフォルト時間枠を動的生成
       let response;
