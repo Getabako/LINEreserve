@@ -92,11 +92,14 @@ interface LiffProfile {
 
 async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
 
   const accessToken = authHeader.substring(7);
 
-  if (accessToken === 'mock-access-token-for-development') {
+  // 開発環境のみモックトークンを許可
+  if (process.env.NODE_ENV !== 'production' && accessToken === 'mock-access-token-for-development') {
     return { userId: 'U_dev_user_12345', displayName: '開発ユーザー' };
   }
 
@@ -106,7 +109,7 @@ async function verifyLiffToken(req: VercelRequest): Promise<LiffProfile | null> 
     });
     return response.data;
   } catch {
-    return null;
+    return null;  // 認証失敗時はnullを返す（フォールバックしない）
   }
 }
 
